@@ -1,4 +1,4 @@
-# Code and data for "Adaptive Learning Intelligence: A World Model Without Pretraining, or Post-Training as Online Timescale Separation"
+# Code and data for "Adaptive Learning Intelligence: Toward a World Model Without Pretraining, or Post-Training as Online Timescale Separation"
 
 This repository holds the environments, training and measurement scripts, raw run
 records and trained checkpoints behind the paper's empirical section (Section 3,
