@@ -1,0 +1,17 @@
+{
+  "run_id": 100,
+  "env_id": 44,
+  "condition": "baseline",
+  "algorithm": "RECURRENTPPO",
+  "seed": 1,
+  "config": {
+    "total_timesteps": 100000,
+    "algorithm": "RECURRENTPPO",
+    "n_eval_episodes": 10,
+    "seed": 1,
+    "variant_role": "baseline",
+    "continue_from_path": null
+  },
+  "started_at_utc": "2026-05-29 03:50:12.127231",
+  "completed_at_utc": "2026-05-29 04:15:57.394718"
+}

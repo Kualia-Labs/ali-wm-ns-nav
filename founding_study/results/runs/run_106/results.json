@@ -1,0 +1,52 @@
+{
+  "status": "completed",
+  "algorithm": "RECURRENTPPO",
+  "total_timesteps": 100000,
+  "mean_reward": 1.4438,
+  "std_reward": 0.1139,
+  "mean_ep_length": 23.7,
+  "success_rate": 1.0,
+  "episodes_trained": 799,
+  "eval_episodes": 10,
+  "eval_rewards": [
+    1.3045,
+    1.4905,
+    1.3017,
+    1.5702,
+    1.4417,
+    1.5767,
+    1.6227,
+    1.4357,
+    1.3043,
+    1.39
+  ],
+  "eval_lengths": [
+    18,
+    24,
+    32,
+    17,
+    15,
+    23,
+    25,
+    18,
+    35,
+    30
+  ],
+  "training_time_sec": 1494.4,
+  "model_path": "/app/data/trained_models/run_106/best_model.zip",
+  "hyperparameters": {
+    "learning_rate": 0.0003,
+    "gamma": 0.99,
+    "n_steps": 128,
+    "batch_size": 128,
+    "n_epochs": 10,
+    "ent_coef": 0.0,
+    "vf_coef": 0.5,
+    "max_grad_norm": 0.5,
+    "gae_lambda": 0.95,
+    "net_arch": "{'pi': [64, 64], 'vf': [64, 64]}"
+  },
+  "sb3_version": "2.8.0",
+  "gymnasium_version": "1.2.3",
+  "random_seed": 1
+}

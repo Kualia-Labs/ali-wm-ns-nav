@@ -1,0 +1,17 @@
+{
+  "run_id": 93,
+  "env_id": 43,
+  "condition": "full",
+  "algorithm": "RECURRENTPPO",
+  "seed": 0,
+  "config": {
+    "total_timesteps": 100000,
+    "algorithm": "RECURRENTPPO",
+    "n_eval_episodes": 10,
+    "seed": 0,
+    "variant_role": "treatment",
+    "continue_from_path": null
+  },
+  "started_at_utc": "2026-05-29 02:07:08.975526",
+  "completed_at_utc": "2026-05-29 02:31:24.259373"
+}

@@ -1,0 +1,6 @@
+gymnasium>=1.2
+stable-baselines3>=2.8
+sb3-contrib>=2.8
+torch
+numpy
+matplotlib

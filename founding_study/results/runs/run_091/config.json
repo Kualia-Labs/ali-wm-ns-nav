@@ -1,0 +1,17 @@
+{
+  "run_id": 91,
+  "env_id": 43,
+  "condition": "full",
+  "algorithm": "PPO",
+  "seed": 1,
+  "config": {
+    "total_timesteps": 100000,
+    "algorithm": "PPO",
+    "n_eval_episodes": 10,
+    "seed": 1,
+    "variant_role": "treatment",
+    "continue_from_path": null
+  },
+  "started_at_utc": "2026-05-29 02:00:48.079515",
+  "completed_at_utc": "2026-05-29 02:03:58.117898"
+}

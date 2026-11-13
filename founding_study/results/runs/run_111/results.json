@@ -1,0 +1,56 @@
+{
+  "status": "completed",
+  "algorithm": "PPO",
+  "total_timesteps": 100000,
+  "mean_reward": 1.1837,
+  "std_reward": 0.2311,
+  "mean_ep_length": 30.6,
+  "success_rate": 1.0,
+  "episodes_trained": 1607,
+  "eval_episodes": 10,
+  "eval_rewards": [
+    1.1701,
+    1.1381,
+    1.198,
+    0.8,
+    1.2942,
+    1.4061,
+    1.476,
+    1.24,
+    1.3748,
+    0.7393
+  ],
+  "eval_lengths": [
+    61,
+    10,
+    26,
+    102,
+    13,
+    12,
+    23,
+    5,
+    39,
+    15
+  ],
+  "training_time_sec": 186.7,
+  "model_path": "/app/data/trained_models/run_111/best_model.zip",
+  "hyperparameters": {
+    "learning_rate": 0.0003,
+    "gamma": 0.99,
+    "n_steps": 2048,
+    "batch_size": 64,
+    "n_epochs": 10,
+    "ent_coef": 0.0,
+    "vf_coef": 0.5,
+    "max_grad_norm": 0.5,
+    "gae_lambda": 0.95,
+    "net_arch": "{'pi': [64, 64], 'vf': [64, 64]}"
+  },
+  "sb3_version": "2.8.0",
+  "gymnasium_version": "1.2.3",
+  "random_seed": 1,
+  "env_kwargs": {
+    "rho": 0.25
+  },
+  "rho": 0.25
+}

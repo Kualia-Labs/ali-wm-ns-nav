@@ -1,0 +1,323 @@
+# Verbatim excerpt: the function that generated the per-run training script on the
+# platform at the time of the sweep runs (git commit 0751610, 2026-05-29).
+# Runs 90-107 used the previous commit (c830f02), identical except that the env was
+# built as env_class() with no keyword arguments. Kept for reference; not runnable alone.
+
+    def _build_training_script(self, env_code: str, algorithm: str, config: dict, output_dir: str) -> str:
+        """Build a self-contained Python training script with rich metrics."""
+        total_timesteps = config.get("total_timesteps", 10000)
+        learning_rate = config.get("learning_rate")
+        n_eval_episodes = config.get("n_eval_episodes", 5)
+        eval_freq = max(total_timesteps // 20, 100)
+        continue_from_path = config.get("continue_from_path")
+        batch_size = config.get("batch_size")
+        gamma = config.get("gamma")
+        net_arch = config.get("net_arch")
+        seed = config.get("seed")
+        env_kwargs = config.get("env_kwargs") or {}
+
+        extra_args = ""
+        if learning_rate:
+            extra_args += f", learning_rate={learning_rate}"
+        if batch_size:
+            extra_args += f", batch_size={int(batch_size)}"
+        if gamma:
+            extra_args += f", gamma={float(gamma)}"
+        if seed is not None:
+            extra_args += f", seed={int(seed)}"
+
+        net_arch_map = {
+            "small": [64, 64],
+            "medium": [256, 256],
+            "large": [512, 256, 128],
+        }
+        policy_kwargs_arg = ""
+        if net_arch and net_arch in net_arch_map:
+            policy_kwargs_arg = f", policy_kwargs=dict(net_arch={net_arch_map[net_arch]})"
+
+        lr_arg = ""  # kept for backward compat but absorbed into extra_args
+
+        env_code_escaped = json.dumps(env_code)
+        output_dir_escaped = json.dumps(output_dir)
+        continue_path_escaped = json.dumps(continue_from_path) if continue_from_path else "None"
+        seed_repr = "None" if seed is None else str(int(seed))
+        env_kwargs_repr = repr(dict(env_kwargs))
+
+        script = f'''#!/usr/bin/env python3
+"""Auto-generated SB3 training script with rich metrics."""
+import json, os, sys, traceback, importlib, importlib.util, inspect, tempfile, time
+import numpy as np
+
+# Cap CPU threads so concurrent training runs don't oversubscribe the box.
+try:
+    _nthreads = max(1, int(os.getenv("OMP_NUM_THREADS", "1")))
+    import torch as _torch
+    _torch.set_num_threads(_nthreads)
+except Exception:
+    pass
+
+OUTPUT_DIR = {output_dir_escaped}
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+CURVE_PATH = os.path.join(OUTPUT_DIR, "curve.json")
+RESULTS_PATH = os.path.join(OUTPUT_DIR, "results.json")
+REPLAY_PATH = os.path.join(OUTPUT_DIR, "replay.json")
+MODEL_PATH = os.path.join(OUTPUT_DIR, "best_model")
+
+def write_json(path, data):
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2, default=str)
+
+try:
+    import gymnasium as gym
+    from stable_baselines3 import PPO, DQN, SAC, A2C, TD3
+    from stable_baselines3.common.callbacks import BaseCallback
+    try:
+        from sb3_contrib import QRDQN  # optional dependency
+    except Exception:
+        QRDQN = None
+    try:
+        from sb3_contrib import RecurrentPPO  # PPO-LSTM, optional dependency
+    except Exception:
+        RecurrentPPO = None
+
+    env_code = {env_code_escaped}
+    env_module_dir = tempfile.mkdtemp(prefix="rlforge_env_")
+    env_module_path = os.path.join(env_module_dir, "custom_env.py")
+    with open(env_module_path, "w") as f:
+        f.write(env_code)
+
+    spec = importlib.util.spec_from_file_location("custom_env", env_module_path)
+    env_module = importlib.util.module_from_spec(spec)
+    sys.modules["custom_env"] = env_module
+    spec.loader.exec_module(env_module)
+
+    env_class = None
+    for name, obj in inspect.getmembers(env_module, inspect.isclass):
+        if issubclass(obj, gym.Env) and obj is not gym.Env:
+            env_class = obj
+            break
+
+    if env_class is None:
+        write_json(RESULTS_PATH, {{"status": "failed", "error": "No gymnasium.Env subclass found"}})
+        sys.exit(1)
+
+    class RichCallback(BaseCallback):
+        def __init__(self, eval_freq=500):
+            super().__init__()
+            self.eval_freq = eval_freq
+            self.curve = []
+            self._ep_rewards = []
+            self._ep_lengths = []
+            self._ep_successes = []
+            self._cur_reward = 0.0
+            self._cur_length = 0
+            self._start_time = time.time()
+
+        def _on_step(self):
+            rewards = self.locals.get("rewards", [])
+            dones = self.locals.get("dones", [])
+            infos = self.locals.get("infos", [{{}}])
+
+            if rewards is not None and len(rewards) > 0:
+                self._cur_reward += float(rewards[0])
+                self._cur_length += 1
+
+            if dones is not None and len(dones) > 0 and dones[0]:
+                self._ep_rewards.append(self._cur_reward)
+                self._ep_lengths.append(self._cur_length)
+                info = infos[0] if infos else {{}}
+                success = info.get("is_success", info.get("success", self._cur_reward > 0))
+                self._ep_successes.append(bool(success))
+                self._cur_reward = 0.0
+                self._cur_length = 0
+
+            if self.n_calls % self.eval_freq == 0 and self._ep_rewards:
+                recent_r = self._ep_rewards[-50:]
+                recent_l = self._ep_lengths[-50:]
+                recent_s = self._ep_successes[-50:]
+                elapsed = time.time() - self._start_time
+
+                point = {{
+                    "step": self.num_timesteps,
+                    "mean_reward": round(float(np.mean(recent_r)), 4),
+                    "min_reward": round(float(np.min(recent_r)), 4),
+                    "max_reward": round(float(np.max(recent_r)), 4),
+                    "mean_ep_length": round(float(np.mean(recent_l)), 1),
+                    "success_rate": round(sum(recent_s) / len(recent_s), 4) if recent_s else 0,
+                    "episodes": len(self._ep_rewards),
+                    "elapsed_sec": round(elapsed, 1),
+                    "fps": round(self.num_timesteps / max(elapsed, 0.1), 0),
+                }}
+
+                try:
+                    logger = self.model.logger
+                    if hasattr(logger, "name_to_value"):
+                        all_loss_keys = [
+                            "train/loss", "train/policy_gradient_loss",
+                            "train/value_loss", "train/entropy_loss",
+                            "train/actor_loss", "train/critic_loss",
+                        ]
+                        for key in all_loss_keys:
+                            if key in logger.name_to_value:
+                                point[key.split("/")[-1]] = round(float(logger.name_to_value[key]), 6)
+                        # Always write a generic 'loss' key from best available
+                        if "loss" not in point:
+                            for fallback in ["policy_gradient_loss", "actor_loss", "critic_loss", "value_loss"]:
+                                if fallback in point:
+                                    point["loss"] = point[fallback]
+                                    break
+                except Exception:
+                    pass
+
+                self.curve.append(point)
+                write_json(CURVE_PATH, self.curve)
+            return True
+
+    ENV_KWARGS = {env_kwargs_repr}
+    try:
+        env = env_class(**ENV_KWARGS) if ENV_KWARGS else env_class()
+    except TypeError:
+        # Env constructor doesn't accept these kwargs; fall back to defaults.
+        env = env_class()
+        ENV_KWARGS = {{}}
+
+    algorithm = "{algorithm}".upper()
+    algo_map = {{"PPO": PPO, "DQN": DQN, "SAC": SAC, "A2C": A2C, "TD3": TD3}}
+    if QRDQN is not None:
+        algo_map["QRDQN"] = QRDQN
+    if RecurrentPPO is not None:
+        algo_map["RECURRENTPPO"] = RecurrentPPO
+    CONTINUE_FROM = {continue_path_escaped}
+
+    if algorithm not in algo_map:
+        write_json(RESULTS_PATH, {{"status": "failed", "error": f"Unknown algorithm: {{algorithm}} (available: {{list(algo_map.keys())}})"}})
+        sys.exit(1)
+
+    # RecurrentPPO (PPO-LSTM) needs the recurrent policy.
+    IS_RECURRENT = algorithm == "RECURRENTPPO"
+    POLICY = "MlpLstmPolicy" if IS_RECURRENT else "MlpPolicy"
+
+    AlgoClass = algo_map[algorithm]
+    if CONTINUE_FROM and os.path.exists(CONTINUE_FROM):
+        try:
+            model = AlgoClass.load(CONTINUE_FROM, env=env)
+        except Exception:
+            model = AlgoClass(POLICY, env, verbose=0{extra_args}{policy_kwargs_arg})
+    else:
+        try:
+            model = AlgoClass(POLICY, env, verbose=0{extra_args}{policy_kwargs_arg})
+        except Exception:
+            model = PPO("MlpPolicy", env, verbose=0{extra_args}{policy_kwargs_arg})
+            algorithm = "PPO"
+            IS_RECURRENT = False
+
+    callback = RichCallback(eval_freq={eval_freq})
+    model.learn(total_timesteps={total_timesteps}, callback=callback, progress_bar=False)
+    model.save(MODEL_PATH)
+
+    # Signal evaluation phase via curve
+    if callback.curve:
+        callback.curve[-1]["phase"] = "evaluating"
+        write_json(CURVE_PATH, callback.curve)
+
+    # Final evaluation + replay capture
+    eval_rewards = []
+    eval_lengths = []
+    eval_successes = []
+    replay_episodes = []
+
+    for ep in range({n_eval_episodes}):
+        obs, info = env.reset(seed=ep)
+        episode_reward = 0.0
+        steps_list = []
+        done = False
+        truncated = False
+        step_count = 0
+        lstm_states = None
+        episode_start = np.ones((1,), dtype=bool)
+
+        while not (done or truncated) and step_count < 5000:
+            action, lstm_states = model.predict(obs, state=lstm_states, episode_start=episode_start, deterministic=True)
+            episode_start = np.zeros((1,), dtype=bool)
+            act_serializable = action.tolist() if hasattr(action, "tolist") else action
+            obs, reward, done, truncated, info = env.step(action)
+            steps_list.append({{
+                "obs": obs.tolist()[:10],
+                "action": act_serializable,
+                "reward": round(float(reward), 4),
+            }})
+            episode_reward += float(reward)
+            step_count += 1
+
+        eval_rewards.append(episode_reward)
+        eval_lengths.append(step_count)
+        success = info.get("is_success", info.get("success", episode_reward > 0))
+        eval_successes.append(bool(success))
+
+        if ep < 3:
+            replay_episodes.append({{
+                "episode": ep,
+                "reward": round(episode_reward, 4),
+                "length": step_count,
+                "success": bool(success),
+                "steps": steps_list[:200],
+            }})
+
+    write_json(REPLAY_PATH, replay_episodes)
+    write_json(CURVE_PATH, callback.curve)
+
+    # Collect hyperparameters from model
+    hyperparams = {{}}
+    try:
+        hp = model.__dict__
+        for k in ["learning_rate", "gamma", "n_steps", "batch_size", "n_epochs",
+                   "ent_coef", "vf_coef", "max_grad_norm", "gae_lambda",
+                   "buffer_size", "tau", "train_freq"]:
+            if k in hp:
+                v = hp[k]
+                if callable(v):
+                    try: v = float(v(1.0))
+                    except: v = str(v)
+                hyperparams[k] = v
+        if hasattr(model.policy, "net_arch"):
+            hyperparams["net_arch"] = str(model.policy.net_arch)
+    except Exception:
+        pass
+
+    sb3_version = "unknown"
+    try:
+        import stable_baselines3
+        sb3_version = stable_baselines3.__version__
+    except Exception:
+        pass
+
+    write_json(RESULTS_PATH, {{
+        "status": "completed",
+        "algorithm": algorithm,
+        "total_timesteps": {total_timesteps},
+        "mean_reward": round(float(np.mean(eval_rewards)), 4),
+        "std_reward": round(float(np.std(eval_rewards)), 4),
+        "mean_ep_length": round(float(np.mean(eval_lengths)), 1),
+        "success_rate": round(sum(eval_successes) / len(eval_successes), 4),
+        "episodes_trained": len(callback._ep_rewards),
+        "eval_episodes": {n_eval_episodes},
+        "eval_rewards": [round(r, 4) for r in eval_rewards],
+        "eval_lengths": eval_lengths,
+        "training_time_sec": round(time.time() - callback._start_time, 1),
+        "model_path": MODEL_PATH + ".zip",
+        "hyperparameters": hyperparams,
+        "sb3_version": sb3_version,
+        "gymnasium_version": gym.__version__,
+        "random_seed": {seed_repr},
+        "env_kwargs": ENV_KWARGS,
+        "rho": ENV_KWARGS.get("rho"),
+    }})
+
+    env.close()
+
+except Exception as e:
+    tb = traceback.format_exc()
+    write_json(RESULTS_PATH, {{"status": "failed", "error": str(e), "traceback": tb}})
+    sys.exit(1)
+'''
+        return script
